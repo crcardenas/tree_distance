@@ -20,5 +20,6 @@ see *.py --help
 
 
 To do
-1 - create svg or pdf outputs
-2 - create a filter for clusters if observed
+
+- create svg or pdf outputs
+- - create a filter for clusters if observed
