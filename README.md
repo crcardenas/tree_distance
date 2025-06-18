@@ -22,4 +22,4 @@ see *.py --help
 To do
 
 - create svg or pdf outputs
-- - create a filter for clusters if observed
+- create a filter for clusters if observed
