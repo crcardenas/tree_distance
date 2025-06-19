@@ -1,91 +1,109 @@
 #!/usr/bin/env python3
 # filter_trees.py
-# Cody Raul Cardenas - 20250618
 
+import argparse
 from pathlib import Path
-from io import StringIO
 import numpy as np
 import pandas as pd
 from Bio import Phylo
 from typing import List, Tuple
 
-def load_trees(treefile: Path) -> List[Phylo.BaseTree.Tree]:
-    """Read all trees from a Newick file into a list."""
-    return list(Phylo.parse(str(treefile), "newick"))
+def collapse_by_length(tree, tol):
+    """Collapse (zero‐length) branches ≤ tol. Return (#collapsed, total_internal)."""
+    collapsed = 0
+    total = 0
+    for cl in tree.get_nonterminals():
+        bl = cl.branch_length or 0.0
+        total += 1
+        if bl <= tol:
+            cl.branch_length = 0.0
+            collapsed += 1
+    pct = collapsed / total if total else 0.0
+    return pct, collapsed
 
-def calculate_null_branch_percent(
-    tree: Phylo.BaseTree.Tree,
-    tol: float = 1e-6
-) -> float:
+def collapse_by_support(tree, supp):
+    """Collapse nodes with support < supp. Return (#collapsed, total_internal)."""
+    collapsed = 0
+    total = 0
+    supports = []
+    for cl in tree.get_nonterminals():
+        total += 1
+        support = cl.confidence if cl.confidence is not None else 0.0
+        supports.append(support)
+        if support < supp:
+            cl.branch_length = 0.0
+            collapsed += 1
+    pct = collapsed / total if total else 0.0
+    mean_sup = np.mean(supports) if supports else 0.0
+    return pct, collapsed, mean_sup
 
-#    % of internal branches with length <= tol.
-#    Uses Biopython's Clade.branch_length.
+def mean_support(tree):
+    """Compute mean bootstrap/support over internal nodes."""
+    supports = []
+    for cl in tree.get_nonterminals():
+        supports.append(cl.confidence or 0.0)
+    return np.mean(supports) if supports else 0.0
 
-    # get all internal nodes (nonterminals)
-    internals = tree.get_nonterminals()
-    # collect their branch lengths
-    blens = [cl.branch_length for cl in internals if cl.branch_length is not None]
-    if not blens:
-        # no internal branches = treat as fully unresolved
-        return 1.0
-    arr = np.array(blens)
-    return np.sum(arr <= tol) / len(arr)
+def load_trees(path: Path):
+    return list(Phylo.parse(str(path), "newick"))
 
-def select_most_resolved_trees(
-    trees: List[Phylo.BaseTree.Tree],
-    keep_fraction: float = 0.25,
-    tol: float = 1e-6
-) -> Tuple[List[Phylo.BaseTree.Tree], pd.DataFrame]:
-
-#    Compute percent‐null for each tree, keep the top X% most resolved.
-#    Returns (selected_trees, stats_df).
-    
-    stats = []
-    for idx, tr in enumerate(trees):
-        pct_null = calculate_null_branch_percent(tr, tol)
-        stats.append((idx, pct_null))
-    df = pd.DataFrame(stats, columns=["tree_index", "pct_null"])
-    df_sorted = df.sort_values("pct_null")
-    n_keep = max(1, int(len(df_sorted) * keep_fraction))
-    keep_idxs = df_sorted.iloc[:n_keep]["tree_index"].tolist()
-    selected = [trees[i] for i in keep_idxs]
-    return selected, df_sorted
-
-def write_trees(
-    trees: List[Phylo.BaseTree.Tree],
-    outpath: Path,
-    schema: str = "newick"
-):
-#    Write a list of Biopython trees back out to file."""
-#    Biopython wants a file or handle
+def write_trees(trees: List, outpath: Path):
     with outpath.open("w") as f:
-        Phylo.write(trees, f, schema)
+        Phylo.write(trees, f, "newick")
 
-if __name__ == "__main__":
-    import argparse
-
+def main():
     p = argparse.ArgumentParser(
-        description="Filter out the X% least-resolved trees by % zero-length internal branches"
+        description="Filter trees by branch‐length tol or node support supp"
     )
-    p.add_argument("treefile", type=Path,
-                   help="input Newick file (multiple trees)")
+    p.add_argument("treefile", type=Path, help="Input Newick file (one per line)")
     p.add_argument("--keep", type=float, default=0.25,
-                   help="fraction to keep (default 0.25)")
-    p.add_argument("--tol", type=float, default=1e-6,
-                   help="branch-length cutoff for 'zero' (default 1e-6)")
+                   help="Fraction of top trees to keep")
+    group = p.add_mutually_exclusive_group()
+    group.add_argument("--tol", type=float,
+                       help="Collapse branches with length ≤ tol")
+    group.add_argument("--supp", type=float,
+                       help="Collapse nodes with support < supp")
     args = p.parse_args()
 
-# Load
-    all_trees = load_trees(args.treefile)
-    sel, stats_df = select_most_resolved_trees(
-        all_trees, keep_fraction=args.keep, tol=args.tol
-    )
+    trees = load_trees(args.treefile)
+    stats = []
 
-# Write outputs
-    write_trees(sel, Path("filtered_trees.treefile"))
-    stats_df.to_csv("polytomy_stats.csv", index=False)
+    if args.tol is not None:
+        csv_name = "tol_polytomy_stats.csv"
+        for idx, tr in enumerate(trees):
+            pct, col = collapse_by_length(tr, args.tol)
+            stats.append((idx, pct, col))
+        # sort ascending pct_null (fewest collapses = most resolved)
+        stats_df = pd.DataFrame(stats, columns=["tree_index", "pct_null", "collapsed"])
+        stats_df.sort_values("pct_null", inplace=True)
+    elif args.supp is not None:
+        csv_name = "supp_polytomy_stats.csv"
+        for idx, tr in enumerate(trees):
+            pct, col, mean_sup = collapse_by_support(tr, args.supp)
+            stats.append((idx, pct, col, mean_sup))
+        # sort descending mean_sup (highest support first)
+        stats_df = pd.DataFrame(stats, columns=["tree_index", "pct_low_support", "collapsed", "mean_support"])
+        stats_df.sort_values("mean_support", ascending=False, inplace=True)
+    else:
+        # neither tol nor supp: sort by mean support
+        csv_name = "mean_support_stats.csv"
+        for idx, tr in enumerate(trees):
+            m = mean_support(tr)
+            stats.append((idx, m))
+        stats_df = pd.DataFrame(stats, columns=["tree_index", "mean_support"])
+        stats_df.sort_values("mean_support", ascending=False, inplace=True)
 
-    print(f"Read       : {len(all_trees)} trees")
-    print(f"Kept       : {len(sel)} trees ({len(sel)/len(all_trees):.1%})")
-    print("Wrote      : filtered_trees.treefile")
-    print("Statistics : polytomy_stats.csv")
+    # write stats
+    stats_df.to_csv(csv_name, index=False)
+    print(f"[SAVE] {csv_name}")
+
+    # select top keep fraction
+    n_keep = max(1, int(len(trees) * args.keep))
+    top_idxs = stats_df["tree_index"].iloc[:n_keep].tolist()
+    filtered = [trees[i] for i in top_idxs]
+
+    write_trees(filtered, Path("filtered_trees.treefile"))
+    print(f"[SAVE] filtered_trees.treefile ({n_keep} of {len(trees)})")
+
+if __name__ == "__main__":
+    main()
