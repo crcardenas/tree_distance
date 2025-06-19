@@ -14,7 +14,7 @@ python compute_distance_matrices.py filtered_trees.treefile --rf --threads 4
 python summarize_distances.py RFmatrix_trees.txt --hist --comps 10 --pcas 2
 ```
 
-To generate a 3D pca use your prefered file (rf, normalized rf, or kf tree distance measure) and which PC's to use. 
+To generate a 3D pca use your prefered eigenvector file (rf, normalized rf, or kf tree distance measure) and which PC's to use. 
 
 see *.py --help 
 
