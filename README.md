@@ -9,7 +9,7 @@ source /local/anaconda3/bin/activate
 conda activate /YOUR_PATH/envs/RF_distance
 
 # fewer comparisons to make (and trees with fewer polytomys) with a lower keep threshold
-python filter_trees.py pentheri_subset2_bb1000_allnni_locustrees.treefile --keep 0.25 --tol 1e-6
+python filter_trees.py pentheri_subset2_bb1000_allnni_locustrees.treefile --keep 0.25 --supp 0.8
 
 # should probably add a rooting step HERE
 # reroot like sortadate... with prefered order of outgroups AFTER filtering by 
