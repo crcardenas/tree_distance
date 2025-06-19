@@ -16,3 +16,4 @@ dependencies:
   - ipykernel
   - jupyterlab
   - plotly
+  - phyx
