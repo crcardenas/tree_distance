@@ -10,6 +10,13 @@ conda activate /YOUR_PATH/envs/RF_distance
 
 # fewer comparisons to make (and trees with fewer polytomys) with a lower keep threshold
 python filter_trees.py pentheri_subset2_bb1000_allnni_locustrees.treefile --keep 0.25 --tol 1e-6
+
+# should probably add a rooting step HERE
+# reroot like sortadate... with prefered order of outgroups AFTER filtering by 
+# overall branch support (so the outgroups dont collapse the entire root)
+# ...
+
+# once rerooted, do your next steps with the prefered distance metric
 python compute_distance_matrices.py filtered_trees.treefile --rf --threads 4
 python summarize_distances.py RFmatrix_trees.txt --hist --comps 10 --pcas 2
 ```
@@ -20,7 +27,8 @@ see *.py --help
 
 
 To do
-
+- confirm collapsed nodes by support
+- confirm collapsed branches by length
 - create svg or pdf outputs
 - create a filter for clusters if observed
 - root trees?
