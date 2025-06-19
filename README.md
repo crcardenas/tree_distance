@@ -24,3 +24,7 @@ To do
 - create svg or pdf outputs
 - create a filter for clusters if observed
 - root trees?
+
+
+Example 3D plot showing three clusters of trees with similar RF distances, suggesting similar topologies:
+![plotly 3D plot of a PCA's 1, 2, & 3rd axes.](https://github.com/crcardenas/tree_distance/blob/main/Robinson-Foulds_Distance_PCA.jpg)
