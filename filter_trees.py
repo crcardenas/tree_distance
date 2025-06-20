@@ -1,48 +1,36 @@
 #!/usr/bin/env python3
-# filter_trees.py
-
 import argparse
 from pathlib import Path
 import numpy as np
 import pandas as pd
 from Bio import Phylo
-from typing import List, Tuple
+import subprocess
+import tempfile
+from typing import List
 
 def collapse_by_length(tree, tol):
-    """Collapse (zero‐length) branches ≤ tol. Return (#collapsed, total_internal)."""
-    collapsed = 0
-    total = 0
-    for cl in tree.get_nonterminals():
-        bl = cl.branch_length or 0.0
+    collapsed = total = 0
+    for clade in tree.get_nonterminals():
         total += 1
-        if bl <= tol:
-            cl.branch_length = 0.0
+        if (clade.branch_length or 0.0) <= tol:
+            clade.branch_length = 0.0
             collapsed += 1
     pct = collapsed / total if total else 0.0
     return pct, collapsed
 
-def collapse_by_support(tree, supp):
-    """Collapse nodes with support < supp. Return (#collapsed, total_internal)."""
-    collapsed = 0
-    total = 0
-    supports = []
-    for cl in tree.get_nonterminals():
-        total += 1
-        support = cl.confidence if cl.confidence is not None else 0.0
-        supports.append(support)
-        if support < supp:
-            cl.branch_length = 0.0
-            collapsed += 1
-    pct = collapsed / total if total else 0.0
-    mean_sup = np.mean(supports) if supports else 0.0
-    return pct, collapsed, mean_sup
-
 def mean_support(tree):
-    """Compute mean bootstrap/support over internal nodes."""
-    supports = []
-    for cl in tree.get_nonterminals():
-        supports.append(cl.confidence or 0.0)
+    supports = [cl.confidence or 0.0 for cl in tree.get_nonterminals()]
     return np.mean(supports) if supports else 0.0
+
+def run_pxcolt(treefile: Path, threshold: float, out_file: Path):
+    cmd = ["pxcolt", "-t", str(treefile), "-l", str(threshold), "-o", str(out_file)]
+    print(f"[RUN] {' '.join(cmd)}")
+    subprocess.run(cmd, check=True)
+
+def run_pxrr(treefile: Path, outgroups: str, out_file: Path):
+    cmd = ["pxrr", "-t", str(treefile), "-r", "-g", outgroups, "-o", str(out_file)]
+    print(f"[RUN] {' '.join(cmd)}")
+    subprocess.run(cmd, check=True)
 
 def load_trees(path: Path):
     return list(Phylo.parse(str(path), "newick"))
@@ -52,58 +40,95 @@ def write_trees(trees: List, outpath: Path):
         Phylo.write(trees, f, "newick")
 
 def main():
-    p = argparse.ArgumentParser(
-        description="Filter trees by branch‐length tol or node support supp"
+    parser = argparse.ArgumentParser(
+        description="Filter and reroot trees with optional collapse by length (--tol) or support (--supp)."
     )
-    p.add_argument("treefile", type=Path, help="Input Newick file (one per line)")
-    p.add_argument("--keep", type=float, default=0.25,
-                   help="Fraction of top trees to keep")
-    group = p.add_mutually_exclusive_group()
-    group.add_argument("--tol", type=float,
-                       help="Collapse branches with length ≤ tol")
-    group.add_argument("--supp", type=float,
-                       help="Collapse nodes with support < supp")
-    args = p.parse_args()
+    parser.add_argument(
+        "-t", "--treefile", type=Path, required=True,
+        help="Input Newick file (one tree per line)"
+    )
+    parser.add_argument(
+        "--keep", type=float, default=0.25,
+        help="Fraction of top trees to retain"
+    )
+    parser.add_argument(
+        "--prefix", type=str, default="",
+        help="Prefix for output files"
+    )
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument(
+        "--tol", nargs="?", const=1e-6, type=float, default=None,
+        help="Collapse branches with length ≤ tol (default 1e-6 if flag provided without value)"
+    )
+    group.add_argument(
+        "--supp", type=int,
+        help="Collapse nodes with support < supp%% via pxcolt"
+    )
+    parser.add_argument(
+        "--ranked_og", required=True,
+        help="Comma-separated ranked outgroups for rerooting"
+    )
+    args = parser.parse_args()
 
-    trees = load_trees(args.treefile)
-    stats = []
+    prefix = (args.prefix + "_") if args.prefix else ""
+    temp_dir = Path(tempfile.mkdtemp(prefix="filter_tmp_"))
+    collapse_input = args.treefile
 
+    # 1) Collapse
     if args.tol is not None:
-        csv_name = "tol_polytomy_stats.csv"
+        print(f"[INFO] Collapsing branches ≤ {args.tol}")
+        trees = load_trees(collapse_input)
+        stats = []
         for idx, tr in enumerate(trees):
             pct, col = collapse_by_length(tr, args.tol)
             stats.append((idx, pct, col))
-        # sort ascending pct_null (fewest collapses = most resolved)
-        stats_df = pd.DataFrame(stats, columns=["tree_index", "pct_null", "collapsed"])
-        stats_df.sort_values("pct_null", inplace=True)
+        df = pd.DataFrame(stats, columns=["tree_index","pct_null","collapsed"])
+        df.sort_values("pct_null", inplace=True)
+        df.to_csv(f"{prefix}tol_polytomy_stats.csv", index=False)
+        print(f"[SAVE] {prefix}tol_polytomy_stats.csv")
+        collapse_input = temp_dir / "tol_collapsed.treefile"
+        write_trees(trees, collapse_input)
+
     elif args.supp is not None:
-        csv_name = "supp_polytomy_stats.csv"
-        for idx, tr in enumerate(trees):
-            pct, col, mean_sup = collapse_by_support(tr, args.supp)
-            stats.append((idx, pct, col, mean_sup))
-        # sort descending mean_sup (highest support first)
-        stats_df = pd.DataFrame(stats, columns=["tree_index", "pct_low_support", "collapsed", "mean_support"])
-        stats_df.sort_values("mean_support", ascending=False, inplace=True)
+        print(f"[INFO] Collapsing nodes with support < {args.supp}%% via pxcolt")
+        thr = args.supp / 100.0
+        collapse_output = temp_dir / "supp_collapsed.treefile"
+        run_pxcolt(args.treefile, thr, collapse_output)
+        trees = load_trees(collapse_output)
+        stats = [(idx, mean_support(tr)) for idx, tr in enumerate(trees)]
+        df = pd.DataFrame(stats, columns=["tree_index","mean_support"])
+        df.sort_values("mean_support", ascending=False, inplace=True)
+        df.to_csv(f"{prefix}supp_polytomy_stats.csv", index=False)
+        print(f"[SAVE] {prefix}supp_polytomy_stats.csv")
+        collapse_input = collapse_output
+
     else:
-        # neither tol nor supp: sort by mean support
-        csv_name = "mean_support_stats.csv"
-        for idx, tr in enumerate(trees):
-            m = mean_support(tr)
-            stats.append((idx, m))
-        stats_df = pd.DataFrame(stats, columns=["tree_index", "mean_support"])
-        stats_df.sort_values("mean_support", ascending=False, inplace=True)
+        print("[INFO] No collapse—using mean support for filtering")
+        trees = load_trees(collapse_input)
+        stats = [(idx, mean_support(tr)) for idx, tr in enumerate(trees)]
+        df = pd.DataFrame(stats, columns=["tree_index","mean_support"])
+        df.sort_values("mean_support", ascending=False, inplace=True)
+        df.to_csv(f"{prefix}mean_support_stats.csv", index=False)
+        print(f"[SAVE] {prefix}mean_support_stats.csv")
 
-    # write stats
-    stats_df.to_csv(csv_name, index=False)
-    print(f"[SAVE] {csv_name}")
+    # 2) Filtering with keep==1 preserving order
+    if args.keep >= 1.0:
+        print("[INFO] --keep 1.00 detected: preserving input order")
+        filtered_file = collapse_input
+    else:
+        trees = load_trees(collapse_input)
+        n_keep = max(1, int(len(trees) * args.keep))
+        top_idxs = df["tree_index"].iloc[:n_keep].tolist()
+        filtered = [trees[i] for i in top_idxs]
+        filtered_file = temp_dir / "filtered.treefile"
+        write_trees(filtered, filtered_file)
+        print(f"[INFO] Filtered top {args.keep*100:.1f}% trees")
 
-    # select top keep fraction
-    n_keep = max(1, int(len(trees) * args.keep))
-    top_idxs = stats_df["tree_index"].iloc[:n_keep].tolist()
-    filtered = [trees[i] for i in top_idxs]
-
-    write_trees(filtered, Path("filtered_trees.treefile"))
-    print(f"[SAVE] filtered_trees.treefile ({n_keep} of {len(trees)})")
+    # 3) Reroot (pxrr preserves order)
+    print(f"[INFO] Rerooting with outgroups: {args.ranked_og}")
+    final_out = Path(f"{prefix}filtered_trees.rr.treefile")
+    run_pxrr(filtered_file, args.ranked_og, final_out)
+    print(f"[SAVE] {final_out}")
 
 if __name__ == "__main__":
     main()
