@@ -62,9 +62,9 @@ def compute_pairwise(
             if do_rf:
                 print(f"Calculating Robinson-Foulds distance between trees {i} and {j}")
             if do_normrf:
-                print(f"Calculating Normalized RF distance between trees {i} and {j}")
+                print(f"Calculating Normalized Robinson-Foulds distance between trees {i} and {j}")
             if do_kf:
-                print(f"Calculating Kuhner–Felsenstein distance between trees {i} and {j}")
+                print(f"Calculating Kuhner–Felsenstein branch-score distance between trees {i} and {j}")
 
     s1, max_sp = get_splits_and_lengths(trees[i], L)
     s2, _      = get_splits_and_lengths(trees[j], L)
@@ -135,9 +135,9 @@ if __name__ == "__main__":
     )
     parser.add_argument("treefile", type=Path,
                         help="Newick file with one tree per line")
-    parser.add_argument("--rf",      action="store_true", help="Compute raw RF")
-    parser.add_argument("--normrf",  action="store_true", help="Compute normalized RF")
-    parser.add_argument("--kf",      action="store_true", help="Compute KF distance")
+    parser.add_argument("--rf",      action="store_true", help="Compute Robinson-Foulds distance ")
+    parser.add_argument("--normrf",  action="store_true", help="Compute normalized Robinson-Foulds distance ")
+    parser.add_argument("--kf",      action="store_true", help="Compute Kuhner–Felsenstein branch-score")
     parser.add_argument("--threads", type=int, default=1,
                         help="Number of parallel processes")
     parser.add_argument("--no-verbose", dest="verbose", action="store_false",
