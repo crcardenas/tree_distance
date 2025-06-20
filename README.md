@@ -2,6 +2,8 @@ TO DO:
 
 ensure PCA plots are being made correctly
 
+make filter_trees.py polytomy stats output include mean and polytomy stats *assuming* that branches were collapsed based on supp or tol
+
 make pdf & SVG plots
 
 add prefix to every step!
