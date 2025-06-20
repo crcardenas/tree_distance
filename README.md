@@ -6,12 +6,13 @@ make pdf & SVG plots
 
 add prefix to every step!
 
-------------------------------
-
 Have a think:
+
 should we instead consider the number of taxa in a locus instead of collapsing nodes of uncertainty?
 
-...
+
+------------------------------
+
 
 Perform a PCA on gene tree distances to explore gene tree discordance 
 
