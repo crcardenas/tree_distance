@@ -1,16 +1,5 @@
 #!/usr/bin/env python3
-"""
-filter_by_pca.py
-
-Split a tree list according to thresholds on PCA axes.
-
-Example:
-  python filter_by_pca.py \
-    --eigenvec RFmatrix_trees_eigenvectors.csv \
-    --treefile filtered_trees.treefile \
-    --filter PC1>=0.033 --filter PC1<=0.47 --filter PC2<0 \
-    --prefix mycluster
-"""
+#Cody Raul Cardenas 20250623
 import argparse, re, sys
 from pathlib import Path
 import pandas as pd
