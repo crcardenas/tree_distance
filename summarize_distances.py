@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # summarize_distances.py
-# Cody Raul Cardenas - 20250618
+# Cody Raul Cardenas - 20250618 (updated with coloring flags and panel fix)
 
 import argparse
 import sys
@@ -12,6 +12,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from sklearn.decomposition import PCA
 
+
 def load_matrix(path: Path):
     print(f"[LOAD] Reading matrix from {path}")
     df = pd.read_csv(path, sep="\t", index_col=0)
@@ -19,6 +20,7 @@ def load_matrix(path: Path):
         raise RuntimeError(f"Matrix {path.name} is not square: {df.shape}")
     labels = df.index.tolist()
     return df.values, labels
+
 
 def summarize(mat: np.ndarray, name: str):
     print(f"\n[SUMMARY] {name}")
@@ -29,10 +31,11 @@ def summarize(mat: np.ndarray, name: str):
     print(f"  median    {np.median(mat):.6f}")
     print(f"  std.dev   {mat.std():.6f}")
 
+
 def plot_heatmap(mat: np.ndarray, name: str):
     print(f"[PLOT] Heatmap for {name}")
     plt.figure(figsize=(8, 6))
-    sns.heatmap(mat, cmap="viridis", cbar_kws={"shrink":0.8})
+    sns.heatmap(mat, cmap="viridis", cbar_kws={"shrink": 0.8})
     plt.title(f"{name} Distance Matrix")
     plt.xlabel("Tree index")
     plt.ylabel("Tree index")
@@ -41,6 +44,7 @@ def plot_heatmap(mat: np.ndarray, name: str):
     plt.savefig(out, dpi=300)
     plt.close()
     print(f"[SAVE] {out}")
+
 
 def plot_histogram(mat: np.ndarray, name: str):
     print(f"[PLOT] Histogram for {name}")
@@ -56,11 +60,8 @@ def plot_histogram(mat: np.ndarray, name: str):
     plt.close()
     print(f"[SAVE] {out}")
 
+
 def run_pca(mat: np.ndarray, labels: list[str], name: str, comps: int):
-    """
-    Perform PCA with `comps` components, save scree, eigenvalues, eigenvectors.
-    Returns the full coords array (n_samples x comps).
-    """
     n_samples = mat.shape[0]
     n_comp = min(comps, n_samples)
     print(f"[PCA] Performing PCA with {n_comp} components")
@@ -70,7 +71,7 @@ def run_pca(mat: np.ndarray, labels: list[str], name: str, comps: int):
     # Scree plot
     print(f"[PLOT] Scree plot for {name}")
     plt.figure(figsize=(6, 4))
-    xs = np.arange(1, n_comp+1)
+    xs = np.arange(1, n_comp + 1)
     plt.bar(xs, pca.explained_variance_ratio_, edgecolor="black")
     plt.xticks(xs)
     plt.xlabel("Principal Component")
@@ -82,7 +83,7 @@ def run_pca(mat: np.ndarray, labels: list[str], name: str, comps: int):
     plt.close()
     print(f"[SAVE] {scree_out}")
 
-    # Eigenvalues + ratios
+    # Eigenvalues
     eig_df = pd.DataFrame({
         "PC": xs,
         "eigenvalue": pca.explained_variance_,
@@ -104,10 +105,16 @@ def run_pca(mat: np.ndarray, labels: list[str], name: str, comps: int):
 
     return coords
 
-def plot_pca_scatter(coords: np.ndarray, name: str):
+
+def plot_pca_scatter(coords: np.ndarray, name: str, color=None, color_label=None):
     print(f"[PLOT] PCA scatter PC1 vs PC2 for {name}")
     plt.figure(figsize=(6, 6))
-    plt.scatter(coords[:,0], coords[:,1], s=30, alpha=0.7, edgecolor="k")
+    if color is not None:
+        sc = plt.scatter(coords[:, 0], coords[:, 1], c=color, cmap='viridis', s=30, edgecolor='k')
+        cbar = plt.colorbar(sc)
+        cbar.set_label(color_label)
+    else:
+        plt.scatter(coords[:, 0], coords[:, 1], s=30, alpha=0.7, edgecolor='k')
     plt.xlabel("PC1")
     plt.ylabel("PC2")
     plt.title(f"{name} – PC1 vs PC2")
@@ -117,44 +124,51 @@ def plot_pca_scatter(coords: np.ndarray, name: str):
     plt.close()
     print(f"[SAVE] {out}")
 
-def plot_pca_panels(coords: np.ndarray, name: str, pcas: int):
+
+def plot_pca_panels(coords: np.ndarray, name: str, pcas: int, color=None, color_label=None):
     """
-    Create one figure with panels: PC1 vs PC2, PC1 vs PC3, ..., up to PC1 vs PC<pcas>.
+    Create subplots: PC1 vs PC2..PC{pcas+1}, with optional colorbar.
     """
     n_comp = coords.shape[1]
     pcas = min(pcas, n_comp - 1)
     if pcas < 1:
-        print("[WARN] --pcas less than 1 or no extra components to plot; skipping panels.")
+        print("[WARN] --pcas <1; skipping panels.")
         return
 
-    print(f"[PLOT] PCA panels for {name}: plotting PC1 vs PC2..PC{pcas+1}")
-    fig, axes = plt.subplots(1, pcas, figsize=(5*pcas, 5))
+    print(f"[PLOT] PCA panels for {name}: PC1 vs PC2..PC{pcas+1}")
+    fig, axes = plt.subplots(1, pcas, figsize=(5 * pcas, 5), constrained_layout=True)
     if pcas == 1:
         axes = [axes]
     for idx, ax in enumerate(axes, start=2):
-        ax.scatter(coords[:,0], coords[:,idx], s=30, alpha=0.7, edgecolor="k")
+        if color is not None:
+            sc = ax.scatter(coords[:, 0], coords[:, idx], c=color, cmap='viridis', s=30, edgecolor='k')
+        else:
+            ax.scatter(coords[:, 0], coords[:, idx], s=30, alpha=0.7, edgecolor='k')
         ax.set_xlabel("PC1")
         ax.set_ylabel(f"PC{idx}")
         ax.set_title(f"PC1 vs PC{idx}")
-    plt.tight_layout()
+    if color is not None:
+        fig.colorbar(sc, ax=axes, shrink=0.6, label=color_label)
     out = f"{name}_pca_panels.png"
     plt.savefig(out, dpi=300)
     plt.close()
     print(f"[SAVE] {out}")
 
+
 def main():
     parser = argparse.ArgumentParser(
-        description="Summarize & visualize RF/KF matrices with PCA outputs"
+        description="Summarize & visualize distance matrices with PCA and optional coloring by tol or supp stats."
     )
-    parser.add_argument("matrices", nargs="+",
-                        help="Tab-delimited matrix files (RF, normRF, KF) from previous compute_distance_matricies.py script")
-    parser.add_argument("--hist", action="store_true",
-                        help="Also generate histogram")
-    parser.add_argument("--comps", type=int, default=10,
-                        help="Number of PCA components to compute/save (eigen CSVs, scree).")
-    parser.add_argument("--pcas", type=int, default=1,
-                        help="Number of additional axes (beyond PC1 & PC2) to plot in panels.")
+    parser.add_argument("matrices", nargs="+", help="Tab-delimited matrix files (RF, normRF, KF)")
+    parser.add_argument("--hist", action="store_true", help="Generate histograms")
+    parser.add_argument("--comps", type=int, default=10, help="PCA components to compute")
+    parser.add_argument("--pcas", type=int, default=1, help="Additional PC panels")
+    parser.add_argument("--supp", type=str, help="CSV of mean_support_stats (tree_index, mean_support)")
+    parser.add_argument("--tol", type=str, help="CSV of tol_polytomy_stats (tree_index, pct_null)")
     args = parser.parse_args()
+
+    if args.supp and args.tol:
+        parser.error("--supp and --tol are mutually exclusive")
 
     for path_str in args.matrices:
         path = Path(path_str)
@@ -163,20 +177,30 @@ def main():
             continue
         name = path.stem
 
-        try:
-            mat, labels = load_matrix(path)
-        except Exception as e:
-            print(f"[ERROR] {e}", file=sys.stderr)
-            continue
-
+        mat, labels = load_matrix(path)
         summarize(mat, name)
         plot_heatmap(mat, name)
         if args.hist:
             plot_histogram(mat, name)
 
         coords = run_pca(mat, labels, name, comps=args.comps)
-        plot_pca_scatter(coords, name)
-        plot_pca_panels(coords, name, pcas=args.pcas)
+
+        # prepare coloring vector
+        if args.supp:
+            df_supp = pd.read_csv(args.supp)
+            color = [df_supp.loc[df_supp.tree_index == i, 'mean_support'].values[0] for i in range(len(labels))]
+            label_col = 'mean_support'
+        elif args.tol:
+            df_tol = pd.read_csv(args.tol)
+            color = [df_tol.loc[df_tol.tree_index == i, 'pct_null'].values[0] for i in range(len(labels))]
+            label_col = 'pct_null'
+        else:
+            color = None
+            label_col = None
+
+        plot_pca_scatter(coords, name, color=color, color_label=label_col)
+        plot_pca_panels(coords, name, pcas=args.pcas, color=color, color_label=label_col)
+
 
 if __name__ == "__main__":
     main()
