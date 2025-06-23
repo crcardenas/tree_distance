@@ -1,16 +1,12 @@
 TO DO:
 
-ensure PCA plots are being made correctly
-
-make filter_trees.py polytomy stats output include mean and polytomy stats *assuming* that branches were collapsed based on supp or tol
-
 make pdf & SVG plots
 
 add prefix to every step!
 
 Have a think:
 
-should we instead consider the number of taxa in a locus instead of collapsing nodes of uncertainty?
+should the number of taxa in a locus be considered for filtering instead of collapsing nodes of uncertainty?
 
 
 ------------------------------
@@ -21,7 +17,7 @@ Perform a PCA on gene tree distances to explore gene tree discordance
 Create compatable conda environment using:
 `conda/mamba create -f environment.yml`
 
-1 - filter_trees.py based on the prefered filtering method (filter_trees.py); this will remove gene trees with uncertainty and speed up pairwise comparision. The tree is also rerooted! Here the rerooted tree uses phyx pxrr with a comma seperated list. More than one outgroup is suggested.
+1 - filter_trees.py based on the prefered filtering method (filter_trees.py); this will remove gene trees with uncertainty and speed up pairwise comparision. The tree is also rerooted! Here the rerooted tree uses phyx pxrr with a comma seperated list. This comma seperated list is ranked by the prefred outgroup (first in the list) up to the user defined outgroup. Using more than one outgroup is suggested.
 
 There are a number of options here to create polytomies based on branch length, branch support, or not at all. In all cases, a keep value is selected for the trees with the fewest polytomies (-tol flag) or highest overal mean branch support (--sup flag or no flag). The support flag calls phyx pxcolt to collapse nodes with poor branch support.
 
@@ -43,11 +39,13 @@ python summarize_distances.py RFmatrix_trees.txt --hist --comps 10 --pcas 2
 ```
 
 4 - optional 3D pca that may reveal clusters that the 2d plots didnt. Helpful in subset of treefiles if a cluster emerges. 500+ trees may cause the output HTML file to load slowly
+
+Both step 3 and 4 have an option to color the tree in PCA space by mean support (--sup flag) or proportion of polytomy (--tol).
 ```
 python 3d_pca.py RFmatrix_trees_eigenvectors.csv
 ```
 
-5 - Create a subset of trees with a filter based on the PCA axis values found in plotly; this requires the user to examine the 2d or 3d output and selecting a cut off to create two subsets of tree files for examination
+5 - Create a subset of trees with a filter based on the PCA axis values found in plotly; this requires the user to examine the 2d or 3d output and selecting a cut off to create two subsets of tree files for examination 
 ```
 python filter_by_pca.py  --eigenvec RFmatrix_trees_eigenvectors.csv --treefile filtered_t
 rees.rr.treefile  --filter 'PC1>=0.033' --filter 'PC1<=0.47' --filter 'PC2<0' --prefix example
