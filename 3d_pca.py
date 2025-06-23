@@ -1,67 +1,110 @@
 #!/usr/bin/env python3
-# 3d_pca.py
-# Cody Raul Cardenas - 20250618
-
 import argparse
 from pathlib import Path
 
 import pandas as pd
 import plotly.express as px
 
+
 def parse_pcs(s: str):
-    """
-    Parse a comma-separated list of three integers for PC axes.
-    """
     parts = s.split(",")
     if len(parts) != 3:
-        raise argparse.ArgumentTypeError("`--pcs` requires exactly three comma-separated values, e.g. 1,2,3")
-    try:
-        vals = [int(p) for p in parts]
-    except ValueError:
-        raise argparse.ArgumentTypeError("All values in `--pcs` must be integers.")
-    if any(v < 1 for v in vals):
-        raise argparse.ArgumentTypeError("PC indices must be 1 or greater.")
+        raise argparse.ArgumentTypeError("--pcs requires exactly three comma-separated PC indices, e.g. 1,2,3")
+    vals = []
+    for p in parts:
+        try:
+            v = int(p)
+        except ValueError:
+            raise argparse.ArgumentTypeError(f"Invalid PC index: {p}")
+        if v < 1:
+            raise argparse.ArgumentTypeError("PC indices must be ≥ 1")
+        vals.append(v)
     return vals
 
+
 def main():
-    p = argparse.ArgumentParser(
-        description="3D PCA plot from eigenvectors CSV with selectable axes"
+    parser = argparse.ArgumentParser(
+        description="3D PCA plot (interactive HTML) with optional support/tol coloring."
     )
-    p.add_argument("eigenvec_csv", type=Path,
-                   help="CSV file of eigenvectors (rows=PCs, cols=samples)")
-    p.add_argument("--pcs", type=parse_pcs, default=[1,2,3],
-                   help="Three comma-separated PC indices to plot, e.g. 1,2,3 (default)")
-    p.add_argument("--html", type=Path, default=None,
-                   help="Output HTML file (default: <stem>_3d_pca.html)")
-    args = p.parse_args()
+    parser.add_argument(
+        "eigenvec", type=str,
+        help="Transposed CSV with eigenvectors (PC1-PCn as rows, tree columns)"
+    )
+    parser.add_argument(
+        "--supp", type=str,
+        help="CSV with tree_index and mean_support columns"
+    )
+    parser.add_argument(
+        "--tol", type=str,
+        help="CSV with tree_index and pct_null columns"
+    )
+    parser.add_argument(
+        "--pcs", type=parse_pcs, default=[1, 2, 3],
+        help="Three comma-separated PC indices to plot, e.g. 1,2,3"
+    )
+    parser.add_argument(
+        "--save", type=str, default=None,
+        help="Output HTML filename (default: <eigenvec_stem>_3d_pca.html)"
+    )
+    args = parser.parse_args()
 
-    # Load eigenvectors: rows are PC1, PC2, ..., columns are tree names
-    df = pd.read_csv(args.eigenvec_csv, index_col=0)
-    coords = df.T  # now rows are trees, columns are PCs
+    if args.tol and args.supp:
+        parser.error("--tol and --supp are mutually exclusive")
 
+    # Load and transpose the eigenvector matrix
+    df = pd.read_csv(args.eigenvec, index_col=0).transpose().reset_index()
+    df = df.rename(columns={"index": "tree"})
+
+    # Convert PC columns to numeric
     pcs = args.pcs
-    cols = [f"PC{v}" for v in pcs]
-    missing = [c for c in cols if c not in coords.columns]
-    if missing:
-        raise ValueError(f"Missing components in CSV: {missing}")
+    for i, v in enumerate(pcs, start=1):
+        col = f"PC{v}"
+        if col not in df.columns:
+            parser.error(f"Missing column '{col}' in {args.eigenvec}")
+    # ensure numeric
+    for col in df.columns:
+        if col.startswith("PC"):
+            df[col] = pd.to_numeric(df[col], errors="coerce")
 
-    # build the DataFrame for plotting
-    plot_df = coords[cols].reset_index().rename(columns={"index": "tree"})
+    color_col = None
+    # Add support coloring if provided
+    if args.supp:
+        supp_df = pd.read_csv(args.supp, usecols=["tree_index", "mean_support"])
+        supp_df["tree"] = supp_df["tree_index"].apply(lambda x: f"tree{x}")
+        df = df.merge(supp_df[["tree", "mean_support"]], on="tree", how="left")
+        color_col = "mean_support"
+    # Add tol coloring if provided
+    elif args.tol:
+        tol_df = pd.read_csv(args.tol, usecols=["tree_index", "pct_null"])
+        tol_df["tree"] = tol_df["tree_index"].apply(lambda x: f"tree{x}")
+        df = df.merge(tol_df[["tree", "pct_null"]], on="tree", how="left")
+        color_col = "pct_null"
 
-    # 3D scatter
+    # Create the interactive 3D scatter
     fig = px.scatter_3d(
-        plot_df,
-        x=cols[0], y=cols[1], z=cols[2],
-        text="tree",
-        title=f"3D PCA ({cols[0]}, {cols[1]}, {cols[2]}) of {args.eigenvec_csv.stem}",
-        labels={"tree": "Tree"}
+        df,
+        x=f"PC{pcs[0]}",
+        y=f"PC{pcs[1]}",
+        z=f"PC{pcs[2]}",
+        color=color_col if color_col else None,
+        hover_name="tree",
+        title=f"3D PCA ({pcs[0]},{pcs[1]},{pcs[2]}) of {Path(args.eigenvec).stem}",
+        color_continuous_scale="Viridis",
+        opacity=0.8,
+        height=800
     )
     fig.update_traces(marker=dict(size=4), selector=dict(mode="markers"))
 
-    out_html = args.html or args.eigenvec_csv.with_name(f"{args.eigenvec_csv.stem}_3d_pca.html")
-    print(f"[SAVE] {out_html}")
+    # Determine output filename
+    if args.save:
+        out_html = Path(args.save)
+    else:
+        stem = Path(args.eigenvec).stem
+        out_html = Path(f"{stem}_3d_pca.html")
+
     fig.write_html(str(out_html))
-    print("Done.")
+    print(f"[SAVE] 3D PCA interactive plot saved as {out_html}")
+
 
 if __name__ == "__main__":
     main()
