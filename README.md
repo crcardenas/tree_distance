@@ -1,3 +1,5 @@
+# Do not use (as of July 2025)! Major issues with the calculation of RF, RFnorm, and KF distances. Need to implement a published version: either splitstree or dendropy 
+
 TO DO:
 
 make pdf & SVG plots
