@@ -4,6 +4,8 @@ make pdf & SVG plots
 
 add prefix to every step!
 
+make flag name conventions consistent (e.g., -t --tree, rather than positional arguments!)
+
 ------------------------------
 
 
