@@ -40,10 +40,9 @@ Both step 3 and 4 have an option to color the tree in PCA space by mean support 
 python 3d_pca.py RFmatrix_trees_eigenvectors.csv --supp subset100_statistics.tsv
 ```
 
-5 - Create a subset of trees with a filter based on the PCA axis values found in plotly; this requires the user to examine the 2d or 3d output and selecting a cut off to create two subsets of tree files for examination 
+5 - Create a subset of trees with a filter based on the PCA axis values found in plotly; this requires the user to examine the 2d or 3d output and selecting a cut off to create two subsets of tree files for examination. This extracts the information from an IQTree2 log so if necessary, new trees can be constructed.
 ```
-python filter_by_pca.py  --eigenvec RFmatrix_trees_eigenvectors.csv --treefile filtered_t
-rees.rr.treefile  --filter 'PC1>=0.033' --filter 'PC1<=0.47' --filter 'PC2<0' --prefix example
+python filter_by_pca.py  --eigenvec RFmatrix_trees_eigenvectors.csv --treefile filtered_trees.rr.treefile  --filter 'PC1>=0.033' --filter 'PC1<=0.47' --filter 'PC2<0' --prefix example
 ```
 
 
