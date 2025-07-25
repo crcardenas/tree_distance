@@ -94,6 +94,7 @@ def main():
         height=800
     )
     fig.update_traces(marker=dict(size=4), selector=dict(mode="markers"))
+    fig.update_layout(scene_aspectmode='cube')
 
     # Determine output filename
     if args.save:
