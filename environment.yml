@@ -17,3 +17,4 @@ dependencies:
   - jupyterlab
   - plotly
   - phyx
+  - iqtree=2.3.6
