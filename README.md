@@ -4,6 +4,8 @@ make pdf & SVG plots
 
 add prefix to every step!
 
+extract trees from scatterplot of RF distances
+
 make flag name conventions consistent (e.g., -t --tree, rather than positional arguments!)
 
 ------------------------------
@@ -48,5 +50,5 @@ python filter_by_pca.py  --eigenvec RFmatrix_trees_eigenvectors.csv --treefile f
 ```
 
 
-Example 3D plot showing three clusters of trees with similar RF distances, suggesting similar topologies:
-TODO!
+Example 3D plot showing clusters of trees based on a decomposition of the RF distances, suggesting divergence in tree topologies.
+![Example 3D PCA generated with plotly](https://github.com/crcardenas/tree_distance/blob/main/example_3d_PCA.png)
