@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # summarize_distances.py
-# Cody Raul Cardenas - 20250618 (updated with coloring flags and panel fix)
+# Cody Raul Cardenas - corrected 20250721 (eigenvectors plotted directly)
+# updated 20250827 to handle dual supports (shalrt + bootstrap) and robust column detection
 
 import argparse
 import sys
@@ -66,7 +67,7 @@ def run_pca(mat: np.ndarray, labels: list[str], name: str, comps: int):
     n_comp = min(comps, n_samples)
     print(f"[PCA] Performing PCA with {n_comp} components")
     pca = PCA(n_components=n_comp)
-    coords = pca.fit_transform(mat)
+    coords = pca.fit_transform(mat)  # still computed to produce eigenvalues/vecs
 
     # Scree plot
     print(f"[PLOT] Scree plot for {name}")
@@ -93,7 +94,7 @@ def run_pca(mat: np.ndarray, labels: list[str], name: str, comps: int):
     eig_df.to_csv(eig_out, index=False)
     print(f"[SAVE] {eig_out}")
 
-    # Eigenvectors
+    # Eigenvectors (rows PC1..PCn, columns = labels)
     comp_df = pd.DataFrame(
         pca.components_,
         index=[f"PC{i}" for i in xs],
@@ -103,18 +104,52 @@ def run_pca(mat: np.ndarray, labels: list[str], name: str, comps: int):
     comp_df.to_csv(comp_out)
     print(f"[SAVE] {comp_out}")
 
-    return coords
+
+def _build_color_vector_from_df(df_supp: pd.DataFrame, length: int, col: str):
+    # build fast mapping from tree_index -> value; return list for indices 0..length-1
+    if 'tree_index' not in df_supp.columns:
+        raise RuntimeError("Support file is missing 'tree_index' column")
+    mapping = df_supp.set_index('tree_index')[col].to_dict()
+    return [mapping.get(i, np.nan) for i in range(length)]
 
 
-def plot_pca_scatter(coords: np.ndarray, name: str, color=None, color_label=None):
+def plot_dual_support_pca(eigvec_df: pd.DataFrame, name: str, shalrt_vals: list, boot_vals: list):
+    pc1 = eigvec_df.loc["PC1"].values
+    pc2 = eigvec_df.loc["PC2"].values
+
+    print(f"[PLOT] Dual PCA scatter (SH-aLRT & Bootstrap) for {name}")
+    fig, axes = plt.subplots(1, 2, figsize=(12, 6), constrained_layout=True)
+
+    sc1 = axes[0].scatter(pc1, pc2, c=shalrt_vals, cmap="viridis", s=30, edgecolor='k')
+    axes[0].set_xlabel("PC1")
+    axes[0].set_ylabel("PC2")
+    axes[0].set_title("SH-aLRT support")
+    fig.colorbar(sc1, ax=axes[0], shrink=0.7, label="mean_shalrt")
+
+    sc2 = axes[1].scatter(pc1, pc2, c=boot_vals, cmap="viridis", s=30, edgecolor='k')
+    axes[1].set_xlabel("PC1")
+    axes[1].set_ylabel("PC2")
+    axes[1].set_title("Bootstrap support")
+    fig.colorbar(sc2, ax=axes[1], shrink=0.7, label="mean_bootstrap")
+
+    out = f"{name}_pca.png"
+    plt.savefig(out, dpi=300)
+    plt.close()
+    print(f"[SAVE] {out}")
+
+
+def plot_pca_scatter(eigvec_df: pd.DataFrame, name: str, color=None, color_label=None):
     print(f"[PLOT] PCA scatter PC1 vs PC2 for {name}")
+    pc1 = eigvec_df.loc["PC1"].values
+    pc2 = eigvec_df.loc["PC2"].values
+
     plt.figure(figsize=(6, 6))
     if color is not None:
-        sc = plt.scatter(coords[:, 0], coords[:, 1], c=color, cmap='viridis', s=30, edgecolor='k')
+        sc = plt.scatter(pc1, pc2, c=color, cmap='viridis', s=30, edgecolor='k')
         cbar = plt.colorbar(sc)
         cbar.set_label(color_label)
     else:
-        plt.scatter(coords[:, 0], coords[:, 1], s=30, alpha=0.7, edgecolor='k')
+        plt.scatter(pc1, pc2, s=30, alpha=0.7, edgecolor='k')
     plt.xlabel("PC1")
     plt.ylabel("PC2")
     plt.title(f"{name} – PC1 vs PC2")
@@ -125,12 +160,9 @@ def plot_pca_scatter(coords: np.ndarray, name: str, color=None, color_label=None
     print(f"[SAVE] {out}")
 
 
-def plot_pca_panels(coords: np.ndarray, name: str, pcas: int, color=None, color_label=None):
-    """
-    Create subplots: PC1 vs PC2..PC{pcas+1}, with optional colorbar.
-    """
-    n_comp = coords.shape[1]
-    pcas = min(pcas, n_comp - 1)
+def plot_pca_panels(eigvec_df: pd.DataFrame, name: str, pcas: int, color=None, color_label=None):
+    pcs = list(eigvec_df.index)
+    pcas = min(pcas, len(pcs) - 1)
     if pcas < 1:
         print("[WARN] --pcas <1; skipping panels.")
         return
@@ -139,11 +171,13 @@ def plot_pca_panels(coords: np.ndarray, name: str, pcas: int, color=None, color_
     fig, axes = plt.subplots(1, pcas, figsize=(5 * pcas, 5), constrained_layout=True)
     if pcas == 1:
         axes = [axes]
+    pc1 = eigvec_df.loc["PC1"].values
     for idx, ax in enumerate(axes, start=2):
+        pci = eigvec_df.loc[f"PC{idx}"].values
         if color is not None:
-            sc = ax.scatter(coords[:, 0], coords[:, idx], c=color, cmap='viridis', s=30, edgecolor='k')
+            sc = ax.scatter(pc1, pci, c=color, cmap='viridis', s=30, edgecolor='k')
         else:
-            ax.scatter(coords[:, 0], coords[:, idx], s=30, alpha=0.7, edgecolor='k')
+            ax.scatter(pc1, pci, s=30, alpha=0.7, edgecolor='k')
         ax.set_xlabel("PC1")
         ax.set_ylabel(f"PC{idx}")
         ax.set_title(f"PC1 vs PC{idx}")
@@ -163,7 +197,7 @@ def main():
     parser.add_argument("--hist", action="store_true", help="Generate histograms")
     parser.add_argument("--comps", type=int, default=10, help="PCA components to compute")
     parser.add_argument("--pcas", type=int, default=1, help="Additional PC panels")
-    parser.add_argument("--supp", type=str, help="CSV of mean_support_stats (tree_index, mean_support)")
+    parser.add_argument("--supp", type=str, help="CSV of mean_support_stats OR mean_shalrt/mean_bootstrap stats")
     parser.add_argument("--tol", type=str, help="CSV of tol_polytomy_stats (tree_index, pct_null)")
     args = parser.parse_args()
 
@@ -183,23 +217,42 @@ def main():
         if args.hist:
             plot_histogram(mat, name)
 
-        coords = run_pca(mat, labels, name, comps=args.comps)
+        run_pca(mat, labels, name, comps=args.comps)
 
-        # prepare coloring vector
+        eig_file = f"{name}_eigenvectors.csv"
+        eigvec_df = pd.read_csv(eig_file, index_col=0)
+
+        color = None
+        label_col = None
+
         if args.supp:
             df_supp = pd.read_csv(args.supp)
-            color = [df_supp.loc[df_supp.tree_index == i, 'mean_support'].values[0] for i in range(len(labels))]
-            label_col = 'mean_support'
+            # dual support columns present -> two-panel PCA
+            if "mean_shalrt" in df_supp.columns and "mean_bootstrap" in df_supp.columns:
+                shalrt_vec = _build_color_vector_from_df(df_supp, len(labels), "mean_shalrt")
+                boot_vec = _build_color_vector_from_df(df_supp, len(labels), "mean_bootstrap")
+                plot_dual_support_pca(eigvec_df, name, shalrt_vec, boot_vec)
+                continue
+            # single-column possibilities
+            if "mean_support" in df_supp.columns:
+                color = _build_color_vector_from_df(df_supp, len(labels), "mean_support")
+                label_col = "mean_support"
+            elif "mean_shalrt" in df_supp.columns:
+                color = _build_color_vector_from_df(df_supp, len(labels), "mean_shalrt")
+                label_col = "mean_shalrt"
+            elif "mean_bootstrap" in df_supp.columns:
+                color = _build_color_vector_from_df(df_supp, len(labels), "mean_bootstrap")
+                label_col = "mean_bootstrap"
+            else:
+                raise RuntimeError(f"Unrecognized support columns in {args.supp}. Expected 'mean_support' or 'mean_shalrt'/'mean_bootstrap'.")
+
         elif args.tol:
             df_tol = pd.read_csv(args.tol)
-            color = [df_tol.loc[df_tol.tree_index == i, 'pct_null'].values[0] for i in range(len(labels))]
-            label_col = 'pct_null'
-        else:
-            color = None
-            label_col = None
+            color = _build_color_vector_from_df(df_tol, len(labels), "pct_null")
+            label_col = "pct_null"
 
-        plot_pca_scatter(coords, name, color=color, color_label=label_col)
-        plot_pca_panels(coords, name, pcas=args.pcas, color=color, color_label=label_col)
+        plot_pca_scatter(eigvec_df, name, color=color, color_label=label_col)
+        plot_pca_panels(eigvec_df, name, pcas=args.pcas, color=color, color_label=label_col)
 
 
 if __name__ == "__main__":
